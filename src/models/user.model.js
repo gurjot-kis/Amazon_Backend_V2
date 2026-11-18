@@ -1,5 +1,14 @@
 import mongoose from "mongoose";
 import crypto from "crypto";
+import {
+  AUTH_PROVIDER,
+  AUTH_PROVIDER_VALUES,
+  GENDER_VALUES,
+  STATUS,
+  STATUS_VALUES,
+  USER_ROLE,
+  USER_ROLE_VALUES,
+} from "../constants/index.js";
 
 const UserSchema = new mongoose.Schema(
   {
@@ -18,6 +27,7 @@ const UserSchema = new mongoose.Schema(
       unique: true,
       index: true,
     },
+    countryCode: { type: String, default: "+91", trim: true },
     phone: { type: String, default: "" },
     address: { type: String, default: "" },
     latitude: { type: Number, default: null },
@@ -26,43 +36,43 @@ const UserSchema = new mongoose.Schema(
     gst_number: { type: String, default: "", trim: true },
     role: {
       type: String,
-      enum: ["SuperAdmin", "User", "Vendor"],
-      default: "User",
+      enum: USER_ROLE_VALUES,
+      default: USER_ROLE.USER,
       index: true,
     },
     status: {
       type: Number,
-      enum: [0, 1],
-      default: 1,
+      enum: STATUS_VALUES,
+      default: STATUS.ACTIVE,
     },
     googleId: { type: String, default: "", trim: true, index: true },
     facebookId: { type: String, default: "", trim: true, index: true },
-    appleId: {type: String, default: "", trim: true, index: true},
+    appleId: { type: String, default: "", trim: true, index: true },
     authProvider: {
       type: String,
-      enum: ["local", "google", "facebook", "apple"],
-      default: "local",
+      enum: AUTH_PROVIDER_VALUES,
+      default: AUTH_PROVIDER.LOCAL,
       index: true,
     },
     profilePicture: { type: String, default: "" },
     avatar: { type: String, default: "" },
     bio: { type: String, default: "Hey there! I am using Chat." },
-    gender: { type: String, default: "" },
-    // Optional for social login users (required for local auth).
+    gender: { type: String, enum: GENDER_VALUES, default: null },
     passwordHash: { type: String, default: "" },
-    // Forgot-password OTP flow
+
+    // **** Forgot-password OTP flow
     resetOtp: { type: String, default: null },
     resetOtpExpiry: { type: Date, default: null },
     resetToken: { type: String, default: null },
     resetTokenExpiry: { type: Date, default: null },
-    // Twilio phone-login OTP (separate from email forgot-password OTP)
+
+    // **** Twilio phone-login OTP (separate from email forgot-password OTP)
     loginTwilioOtp: { type: String, default: null },
     loginTwilioOtpExpiry: { type: Date, default: null },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 const User = mongoose.model("User", UserSchema);
 
 export default User;
-
