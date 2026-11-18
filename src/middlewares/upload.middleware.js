@@ -45,8 +45,8 @@ const createStorage = (subfolder) =>
 export const uploadProductImages = multer({
   storage: createStorage("products"),
   fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB per file
-}).any()
+  limits: { fileSize: 5 * 1024 * 1024 },
+}).any();
 // .fields([
 //   { name: "mainImage", maxCount: 1 },
 //   { name: "featuredImages", maxCount: 10 },
@@ -55,32 +55,38 @@ export const uploadProductImages = multer({
 export const uploadCategoryImage = multer({
   storage: createStorage("categories"),
   fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB per file
+  limits: { fileSize: 5 * 1024 * 1024 },
 }).single("category_image");
 
 export const uploadSubCategoryImage = multer({
   storage: createStorage("sub-categories"),
   fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB per file
+  limits: { fileSize: 5 * 1024 * 1024 },
 }).single("sub_category_image");
 
 export const uploadAdminProfilePicture = multer({
   storage: createStorage("admin"),
   fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB per file
+  limits: { fileSize: 5 * 1024 * 1024 },
 }).single("profile_picture");
 
 export const uploadBannerImage = multer({
   storage: createStorage("banners"),
   fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB per file
+  limits: { fileSize: 5 * 1024 * 1024 },
 }).single("banner_image");
 
 export const uploadWarehouseImage = multer({
   storage: createStorage("warehouses"),
   fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB per file
+  limits: { fileSize: 5 * 1024 * 1024 },
 }).single("warehouse_image");
+
+export const uploadProfileImage = multer({
+  storage: createStorage("profiles"),
+  fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 },
+}).single("profilePicture");
 
 const ensureDir = (dirPath) => {
   if (!fs.existsSync(dirPath)) {

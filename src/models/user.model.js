@@ -59,6 +59,8 @@ const UserSchema = new mongoose.Schema(
     bio: { type: String, default: "Hey there! I am using Chat." },
     gender: { type: String, enum: GENDER_VALUES, default: null },
     passwordHash: { type: String, default: "" },
+    deletedAt: { type: Date, default: null },
+    isDeleted: { type: Boolean, default: false, index: true },
 
     // **** Forgot-password OTP flow
     resetOtp: { type: String, default: null },
@@ -69,6 +71,17 @@ const UserSchema = new mongoose.Schema(
     // **** Twilio phone-login OTP (separate from email forgot-password OTP)
     loginTwilioOtp: { type: String, default: null },
     loginTwilioOtpExpiry: { type: Date, default: null },
+
+    // **** Email change by OTP flow
+    emailChangeOtp: { type: String, default: null },
+    emailChangeOtpExpiry: { type: Date, default: null },
+    pendingEmail: { type: String, default: null },
+
+    // **** phone change by OTP flow
+    phoneChangeOtp: { type: String, default: null },
+    phoneChangeOtpExpiry: { type: Date, default: null },
+    pendingPhone: { type: String, default: null },
+    pendingCountryCode: { type: String, default: "+91" },
   },
   { timestamps: true },
 );

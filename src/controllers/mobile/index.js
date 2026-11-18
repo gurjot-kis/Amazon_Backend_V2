@@ -5,6 +5,8 @@ import CartController from "./cart.controller.js";
 import AddressController from "./address.controller.js";
 import OrderController from "./order.controller.js";
 import PaymentController from "./payment.controller.js";
+import UserController from "./user.controller.js";
+import WishListController from "./wishlist.controller.js";
 
 export {
   BannerController,
@@ -14,4 +16,6 @@ export {
   AddressController,
   OrderController,
   PaymentController,
+  UserController,
+  WishListController,
 };

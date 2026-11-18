@@ -6,6 +6,8 @@ import BannerRoutes from "./banner.routes.js";
 import AddressRoutes from "./address.routes.js";
 import OrderRoutes from "./order.routes.js";
 import PaymentRoutes from "./payment.routes.js";
+import UserRoutes from "./user.routes.js";
+import WishlistRoutes from "./wishlist.routes.js";
 
 const router = express.Router();
 
@@ -16,5 +18,7 @@ router.use("/banner", BannerRoutes);
 router.use("/address", AddressRoutes);
 router.use("/order", OrderRoutes);
 router.use("/payment", PaymentRoutes);
+router.use("/user", UserRoutes);
+router.use("/wishlist", WishlistRoutes);
 
 export default router;
