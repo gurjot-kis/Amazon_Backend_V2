@@ -1,4 +1,12 @@
 import mongoose from "mongoose";
+import {
+  ORDER_STATUS,
+  ORDER_STATUS_VALUES,
+  PAYMENT_METHOD,
+  PAYMENT_METHOD_VALUES,
+  STATUS,
+  STATUS_VALUES,
+} from "../constants/index.js";
 
 const { Schema } = mongoose;
 
@@ -29,13 +37,6 @@ const OrderItemSchema = new Schema(
       type: Schema.Types.ObjectId,
       ref: "ProductVariant",
       default: null,
-    },
-    // Owner of the product when a Vendor listed it; null for SuperAdmin products.
-    vendor_id: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
-      index: true,
     },
     variant: { type: VariantSnapshotSchema, default: null },
     name: { type: String, required: true, trim: true },
@@ -91,19 +92,28 @@ const OrderSchema = new Schema(
     delivery_charge: { type: Number, default: 0, min: 0 },
     delivery_waived: { type: Boolean, default: false },
     small_cart_charge: { type: Number, default: 0, min: 0 },
-    paymentMethod: { type: String, default: "COD", trim: true },
+    paymentMethod: {
+      type: String,
+      enum: PAYMENT_METHOD_VALUES,
+      default: PAYMENT_METHOD.COD,
+      trim: true,
+    },
     paymentReceived: {
       type: Number,
-      enum: [0, 1],
-      default: 0,
+      enum: STATUS_VALUES,
+      default: STATUS.INACTIVE,
       index: true,
     },
     status: {
       type: String,
-      enum: ["placed", "confirmed", "shipped", "delivered", "cancelled"],
-      default: "placed",
+      enum: ORDER_STATUS_VALUES,
+      default: ORDER_STATUS.PLACED,
       index: true,
     },
+
+    coupon_id: { type: Schema.Types.ObjectId, ref: "Coupon", default: null },
+    coupon_code: { type: String, default: "", trim: true },
+    coupon_discount: { type: Number, default: 0, min: 0 },
   },
   { timestamps: true },
 );

@@ -5,33 +5,21 @@ import Product from "../models/product.model.js";
 import ProductVariant from "../models/productVariant.model.js";
 import Address from "../models/address.model.js";
 import User from "../models/user.model.js";
-import { sendEmail } from "../utils/email.js";
 import { AppError } from "../utils/AppError.js";
 import { toObjectId, isObjectIdLike } from "../utils/object-id.js";
 import { getCartSettings } from "./cart.service.js";
 import { computeCartSummary } from "./cart-settings.service.js";
 import PaymentService from "./payment.service.js";
-
-/* -------------------------------------------------------------------------- */
-/*                                  Constants                                 */
-/* -------------------------------------------------------------------------- */
-
-const ORDER_STATUSES = [
-  "placed",
-  "confirmed",
-  "shipped",
-  "delivered",
-  "cancelled",
-];
-const USER_CANCELLABLE_STATUSES = ["placed", "confirmed"];
-const STATUS_TRANSITIONS = {
-  placed: ["confirmed", "cancelled"],
-  confirmed: ["shipped", "cancelled"],
-  shipped: ["delivered", "cancelled"],
-  delivered: [],
-  cancelled: [],
-};
-const ALLOWED_PAYMENT_METHODS = ["COD"];
+import { notifyStatusChange } from "./order-notification.service.js";
+// import WalletService from "./wallet.service.js";
+// import CouponService from "./coupon.service.js";
+// import NotificationService from "./notification.service.js";
+import {
+  ALLOWED_PAYMENT_METHODS,
+  ORDER_STATUS_VALUES,
+  STATUS_TRANSITIONS,
+  USER_CANCELLABLE_STATUSES,
+} from "../constants/index.js";
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 100;
@@ -39,23 +27,15 @@ const PREVIEW_IMAGES = 4;
 
 const USER_LIST_FIELDS =
   "status totalItems grandTotal paymentMethod paymentReceived createdAt items.name items.mainImage";
+
 /* -------------------------------------------------------------------------- */
 /*                                   Helpers                                  */
 /* -------------------------------------------------------------------------- */
-
 const normalizeString = (value) => String(value ?? "").trim();
 const idToString = (value) => (value == null ? null : String(value));
 const finiteOrNull = (value) =>
   value != null && Number.isFinite(value) ? value : null;
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const escapeHtml = (value) =>
-  String(value ?? "").replace(
-    /[&<>"']/g,
-    (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        c
-      ],
-  );
 
 const runInTransaction = async (work) => {
   const session = await mongoose.startSession();
@@ -108,6 +88,9 @@ const findPaginated = async (filter, pagination, select) => {
   ]);
   return { orders, pagination: buildPagination(total, pagination) };
 };
+
+const shortId = (id) =>
+  id == null ? null : String(id).slice(-6).toUpperCase();
 
 /* -------------------------------------------------------------------------- */
 /*                                   Mappers                                  */
@@ -166,11 +149,15 @@ const mapSummary = (order) => {
   const smallCart = Number(order.small_cart_charge || 0);
   if (smallCart > 0) summary.small_cart_charge = smallCart;
 
+  const couponDiscount = Number(order.coupon_discount || 0);
+  if (couponDiscount > 0) summary.coupon_discount = couponDiscount;
+
   return summary;
 };
 
 const mapOrder = (order) => ({
   _id: idToString(order._id),
+  orderId: shortId(order._id),
   user_id: idToString(order.user_id),
   items: (order.items || []).map(mapItem),
   shippingAddress: mapShippingAddress(order.shippingAddress),
@@ -178,29 +165,12 @@ const mapOrder = (order) => ({
   grandTotal: Number(order.grandTotal || 0),
   summary: mapSummary(order),
   paymentMethod: order.paymentMethod,
+  coupon_code: order.coupon_code || "",
   paymentReceived: Number(order.paymentReceived || 0),
   status: order.status,
   createdAt: order.createdAt,
   updatedAt: order.updatedAt,
 });
-
-const mapVendorOrder = (order, vendorId) => {
-  const items = (order.items || []).filter(
-    (i) => idToString(i.vendor_id) === vendorId,
-  );
-  return {
-    _id: idToString(order._id),
-    items: items.map(mapItem),
-    totalItems: items.reduce((acc, i) => acc + Number(i.quantity || 0), 0),
-    vendorTotal: items.reduce((acc, i) => acc + Number(i.itemTotal || 0), 0),
-    shippingAddress: mapShippingAddress(order.shippingAddress),
-    paymentMethod: order.paymentMethod,
-    paymentReceived: Number(order.paymentReceived || 0),
-    status: order.status,
-    createdAt: order.createdAt,
-    updatedAt: order.updatedAt,
-  };
-};
 
 const getUserNameMap = async (orders) => {
   const ids = [
@@ -218,6 +188,7 @@ const mapOrderListItem = (order) => {
   const items = order.items || [];
   return {
     _id: idToString(order._id),
+    orderId: shortId(order._id),
     status: order.status,
     totalItems: Number(order.totalItems || 0),
     grandTotal: Number(order.grandTotal || 0),
@@ -292,74 +263,15 @@ const adjustStock = async (items, sign, session) => {
 
 const restoreStock = (items, session) => adjustStock(items, 1, session);
 
-/* -------------------------------------------------------------------------- */
-/*                                    Email                                   */
-/* -------------------------------------------------------------------------- */
-
-const formatOrderStatusEmail = ({ customerName, order, status }) => {
-  const name = customerName || "Customer";
-  const orderId = String(order._id);
-  const totalItems = Number(order.totalItems || 0);
-  const grandTotal = Number(order.grandTotal || 0);
-  const paymentMethod = order.paymentMethod || "COD";
-  const paymentReceived =
-    Number(order.paymentReceived || 0) === 1 ? "Yes" : "No";
-
-  const subject = `Order ${orderId} is now ${status}`;
-  const text = [
-    `Hello ${name},`,
-    "",
-    `Your order status has been updated to: ${status}`,
-    `Order ID: ${orderId}`,
-    `Items: ${totalItems}`,
-    `Grand Total: ${grandTotal}`,
-    `Payment Method: ${paymentMethod}`,
-    `Payment Received: ${paymentReceived}`,
-    "",
-    "Thank you for shopping with us.",
-  ].join("\n");
-
-  const html = `
-    <p>Hello ${escapeHtml(name)},</p>
-    <p>Your order status has been updated.</p>
-    <p><strong>Status:</strong> ${escapeHtml(status)}</p>
-    <p><strong>Order ID:</strong> ${escapeHtml(orderId)}</p>
-    <p><strong>Items:</strong> ${totalItems}</p>
-    <p><strong>Grand Total:</strong> ${grandTotal}</p>
-    <p><strong>Payment Method:</strong> ${escapeHtml(paymentMethod)}</p>
-    <p><strong>Payment Received:</strong> ${paymentReceived}</p>
-    <p>Thank you for shopping with us.</p>
-  `;
-
-  return { subject, text, html };
+const notifyOrder = (order, status) => {
+  void notifyStatusChange(order, status); // email
+  // void NotificationService.orderStatusChanged(order, status); // push
 };
-
-const notifyStatusChange = async (order, status) => {
-  try {
-    const customer = await User.findById(order.user_id)
-      .select("name email")
-      .lean()
-      .exec();
-    if (!customer?.email) return;
-    const { subject, text, html } = formatOrderStatusEmail({
-      customerName: customer.name,
-      order,
-      status,
-    });
-    await sendEmail({ to: customer.email, subject, text, html });
-  } catch (err) {
-    console.error("[order] status email failed:", err?.message);
-  }
-};
-
-/* -------------------------------------------------------------------------- */
-/*                                   Service                                  */
-/* -------------------------------------------------------------------------- */
 
 export const OrderService = {
   /* ------------------------------- Customer ------------------------------- */
 
-  placeOrder: async ({ user_id, address_id, paymentMethod }) => {
+  placeOrder: async ({ user_id, address_id, paymentMethod, coupon_code }) => {
     const userId = toObjectId(user_id, "user_id");
     const addressId = toObjectId(address_id, "address_id");
 
@@ -368,7 +280,6 @@ export const OrderService = {
       throw new AppError(400, "Unsupported payment method");
     }
 
-    // Same settings source as the cart, so cart total === order total.
     const settings = await getCartSettings("Product");
 
     const order = await runInTransaction(async (session) => {
@@ -385,7 +296,6 @@ export const OrderService = {
         throw new AppError(400, "Cart is empty");
       }
 
-      // One line per product + variant combination.
       const lines = new Map();
       for (const item of cart.items) {
         const quantity = Number(item.quantity);
@@ -473,8 +383,6 @@ export const OrderService = {
         return {
           product_id: product._id,
           variant_id: variant?._id ?? null,
-          vendor_id:
-            product.role === "Vendor" ? (product.user_id ?? null) : null,
           variant: variant
             ? {
                 sku: variant.sku || "",
@@ -501,12 +409,35 @@ export const OrderService = {
       const totalItems = items.reduce((acc, i) => acc + i.quantity, 0);
       const summary = computeCartSummary(items, settings);
 
+      const orderId = new mongoose.Types.ObjectId();
+      let couponDiscount = 0;
+      let couponId = null;
+      let couponCode = "";
+
+      // if (normalizeString(coupon_code)) {
+      //   const applied = await CouponService.applyCoupon({
+      //     code: coupon_code,
+      //     user_id: userId,
+      //     order_amount: summary.items_total,
+      //     order_id: orderId,
+      //     session,
+      //   });
+      //   couponDiscount = applied.discount_amount;
+      //   couponId = applied.coupon_id;
+      //   couponCode = applied.code;
+      // }
+
+      const grandTotal =
+        Math.round(Math.max(0, summary.grandTotal - couponDiscount) * 100) /
+        100;
+
       // Atomic, guarded stock reservation (products and variants).
       await adjustStock(items, -1, session);
 
       const [created] = await Order.create(
         [
           {
+            _id: orderId,
             user_id: userId,
             items,
             shippingAddress: {
@@ -524,7 +455,10 @@ export const OrderService = {
               longitude: finiteOrNull(address.longitude),
             },
             totalItems,
-            grandTotal: summary.grandTotal,
+            grandTotal,
+            coupon_id: couponId,
+            coupon_code: couponCode,
+            coupon_discount: couponDiscount,
             items_total: summary.items_total,
             price_total: summary.price_total,
             discount: summary.discount,
@@ -533,11 +467,23 @@ export const OrderService = {
             delivery_waived: Boolean(summary.delivery_waived),
             small_cart_charge: summary.small_cart_charge || 0,
             paymentMethod: method,
-            status: "placed",
+            paymentReceived: method === "WALLET" ? 1 : 0,
+            status: method === "ONLINE" ? "payment_pending" : "placed",
           },
         ],
         { session },
       );
+
+      // if (method === "WALLET") {
+      //   await WalletService.debit({
+      //     user_id: userId,
+      //     amount: Math.round(grandTotal * 100), // rupees to paise
+      //     source: "order_payment",
+      //     reference: { type: "Order", id: created._id },
+      //     idempotency_key: `order:${created._id}`,
+      //     session,
+      //   });
+      // }
 
       await PaymentService.createPendingPayment({ order: created, session });
 
@@ -549,12 +495,14 @@ export const OrderService = {
 
       return created.toObject();
     });
+    if (order.status === "placed") notifyOrder(order, "placed");
 
     return mapOrder(order);
   },
 
   listUserOrders: async ({ user_id, page, limit }) => {
     const userId = toObjectId(user_id, "user_id");
+
     const { orders, pagination } = await findPaginated(
       { user_id: userId },
       parsePagination({ page, limit }),
@@ -605,10 +553,38 @@ export const OrderService = {
         session,
       });
       await restoreStock(cancelled.items, session);
+      // await CouponService.releaseCoupon({ order_id: cancelled._id, session });
+      return cancelled.toObject();
+    });
+    notifyOrder(order, "cancelled");
+
+    return mapOrder(order);
+  },
+
+  cancelExpiredOrder: async ({ order_id }) => {
+    const orderId = toObjectId(order_id, "order_id");
+
+    const result = await runInTransaction(async (session) => {
+      const cancelled = await Order.findOneAndUpdate(
+        { _id: orderId, status: "payment_pending" },
+        { $set: { status: "cancelled" } },
+        { new: true, session },
+      ).exec();
+
+      // Already paid, cancelled or moved on: nothing to do.
+      if (!cancelled) return null;
+
+      await PaymentService.handleOrderCancellation({
+        order_id: cancelled._id,
+        session,
+      });
+      await restoreStock(cancelled.items, session);
+      // await CouponService.releaseCoupon({ order_id: cancelled._id, session });
       return cancelled.toObject();
     });
 
-    return mapOrder(order);
+    if (result) notifyOrder(result, "cancelled");
+    return Boolean(result);
   },
 
   /* --------------------------------- Admin -------------------------------- */
@@ -620,7 +596,7 @@ export const OrderService = {
 
     if (status) {
       const normalizedStatus = normalizeString(status).toLowerCase();
-      if (!ORDER_STATUSES.includes(normalizedStatus)) {
+      if (!ORDER_STATUS_VALUES.includes(normalizedStatus)) {
         throw new AppError(400, "Invalid order status");
       }
       filter.status = normalizedStatus;
@@ -636,14 +612,29 @@ export const OrderService = {
         .exec();
 
       const or = [
+        { "shippingAddress.fullName": regex },
         { "shippingAddress.city": regex },
         { "shippingAddress.state": regex },
+        { "items.name": regex },
         { status: regex },
       ];
       if (matchedUsers.length > 0) {
         or.push({ user_id: { $in: matchedUsers.map((u) => u._id) } });
       }
-      if (isObjectIdLike(term)) or.push({ _id: term });
+      if (isObjectIdLike(term)) {
+        or.push({ _id: toObjectId(term, "order_id") });
+      } else if (/^[a-f0-9]{4,23}$/i.test(term)) {
+        // Match the short order id (last characters of _id).
+        or.push({
+          $expr: {
+            $regexMatch: {
+              input: { $toString: "$_id" },
+              regex: `${escapeRegex(term)}$`,
+              options: "i",
+            },
+          },
+        });
+      }
 
       filter.$or = or;
     }
@@ -681,7 +672,7 @@ export const OrderService = {
     const nextStatus = normalizeString(status).toLowerCase();
 
     if (!nextStatus) throw new AppError(400, "status is required");
-    if (!ORDER_STATUSES.includes(nextStatus)) {
+    if (!ORDER_STATUS_VALUES.includes(nextStatus)) {
       throw new AppError(400, "Invalid order status");
     }
 
@@ -702,6 +693,10 @@ export const OrderService = {
       }
 
       doc.status = nextStatus;
+      // COD cash is collected on delivery.
+      if (nextStatus === "delivered" && doc.paymentMethod === "COD") {
+        doc.paymentReceived = 1;
+      }
       await doc.save({ session });
 
       if (nextStatus === "cancelled") {
@@ -710,53 +705,14 @@ export const OrderService = {
           session,
         });
         await restoreStock(doc.items, session);
+        // await CouponService.releaseCoupon({ order_id: doc._id, session });
       }
 
       return { data: doc.toObject(), statusChanged: true };
     });
 
-    if (order.statusChanged) void notifyStatusChange(order.data, nextStatus);
-
+    if (order.statusChanged) notifyOrder(order.data, nextStatus);
     return mapOrder(order.data);
-  },
-
-  /* --------------------------------- Vendor -------------------------------- */
-
-  listVendorOrders: async ({ vendor_id, status, page, limit }) => {
-    const vendorId = toObjectId(vendor_id, "vendor_id");
-    const filter = { "items.vendor_id": vendorId };
-
-    if (status) {
-      const normalizedStatus = normalizeString(status).toLowerCase();
-      if (!ORDER_STATUSES.includes(normalizedStatus)) {
-        throw new AppError(400, "Invalid order status");
-      }
-      filter.status = normalizedStatus;
-    }
-
-    const { orders, pagination } = await findPaginated(
-      filter,
-      parsePagination({ page, limit }),
-    );
-    return {
-      orders: orders.map((order) => mapVendorOrder(order, String(vendorId))),
-      pagination,
-    };
-  },
-
-  getVendorOrderById: async ({ vendor_id, order_id }) => {
-    const vendorId = toObjectId(vendor_id, "vendor_id");
-    const orderId = toObjectId(order_id, "order_id");
-
-    const order = await Order.findOne({
-      _id: orderId,
-      "items.vendor_id": vendorId,
-    })
-      .lean()
-      .exec();
-    if (!order) throw new AppError(404, "Order not found");
-
-    return mapVendorOrder(order, String(vendorId));
   },
 };
 
