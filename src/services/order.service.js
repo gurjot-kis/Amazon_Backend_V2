@@ -11,7 +11,7 @@ import { getCartSettings } from "./cart.service.js";
 import { computeCartSummary } from "./cart-settings.service.js";
 import PaymentService from "./payment.service.js";
 import { notifyStatusChange } from "./order-notification.service.js";
-// import WalletService from "./wallet.service.js";
+import WalletService from "./wallet.service.js";
 // import CouponService from "./coupon.service.js";
 // import NotificationService from "./notification.service.js";
 import {
@@ -474,16 +474,16 @@ export const OrderService = {
         { session },
       );
 
-      // if (method === "WALLET") {
-      //   await WalletService.debit({
-      //     user_id: userId,
-      //     amount: Math.round(grandTotal * 100), // rupees to paise
-      //     source: "order_payment",
-      //     reference: { type: "Order", id: created._id },
-      //     idempotency_key: `order:${created._id}`,
-      //     session,
-      //   });
-      // }
+      if (method === "WALLET") {
+        await WalletService.debit({
+          user_id: userId,
+          amount: Math.round(grandTotal * 100), // rupees to paise
+          source: "order_payment",
+          reference: { type: "Order", id: created._id },
+          idempotency_key: `order:${created._id}`,
+          session,
+        });
+      }
 
       await PaymentService.createPendingPayment({ order: created, session });
 
