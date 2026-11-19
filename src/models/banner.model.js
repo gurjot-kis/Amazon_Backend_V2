@@ -1,14 +1,19 @@
 import mongoose from "mongoose";
-import crypto from "crypto";
+import {
+  BANNER_DEVICE_TYPE,
+  BANNER_DEVICE_TYPE_VALUES,
+  BANNER_POSITION,
+  BANNER_POSITION_VALUES,
+  BANNER_REDIRECT_TYPE,
+  BANNER_REDIRECT_TYPE_VALUES,
+  BANNER_UPLOAD_AREA,
+  BANNER_UPLOAD_AREA_VALUES,
+  STATUS,
+  STATUS_VALUES,
+} from "../constants/index.js";
 
 const BannerSchema = new mongoose.Schema(
   {
-    banner_id: {
-      type: String,
-      required: true,
-      unique: true,
-      default: () => crypto.randomUUID(),
-    },
     title: {
       type: String,
       required: true,
@@ -19,30 +24,68 @@ const BannerSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+
     banner_image: {
       type: String,
       default: "",
       trim: true,
     },
-    order_url: {
+
+    redirect_url: {
       type: String,
       required: true,
       trim: true,
     },
+    redirect_type: {
+      type: String,
+      enum: BANNER_REDIRECT_TYPE_VALUES,
+      default: BANNER_REDIRECT_TYPE.NONE,
+    },
+
     upload_area: {
       type: String,
-      enum: ["website", "app"],
-      default: "website",
-      trim: true,
+      enum: BANNER_UPLOAD_AREA_VALUES,
+      default: BANNER_UPLOAD_AREA.APP,
+    },
+
+    position: {
+      type: String,
+      enum: BANNER_POSITION_VALUES,
+      default: BANNER_POSITION.HOME_TOP,
+    },
+    device_type: {
+      type: String,
+      enum: BANNER_DEVICE_TYPE_VALUES,
+      default: BANNER_DEVICE_TYPE.MOBILE,
+    },
+    sort_order: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    start_date: {
+      type: Date,
+      default: null,
+    },
+    end_date: {
+      type: Date,
+      default: null,
     },
     status: {
       type: Number,
-      enum: [0, 1],
-      default: 1,
+      enum: STATUS_VALUES,
+      default: STATUS.ACTIVE,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
+
+BannerSchema.index({
+  upload_area: 1,
+  position: 1,
+  status: 1,
+  sort_order: 1,
+});
 
 const Banner = mongoose.model("Banner", BannerSchema);
 
