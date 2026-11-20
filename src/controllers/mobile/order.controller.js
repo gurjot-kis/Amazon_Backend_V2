@@ -29,11 +29,12 @@ const handle = (fallbackMessage, fn) => async (req, res) => {
 
 export const OrderController = {
   placeOrder: handle("Unable to place order", async (req, res) => {
-    const { address_id, paymentMethod } = req.body || {};
+    const { address_id, paymentMethod, coupon_code } = req.body || {};
     const data = await OrderService.placeOrder({
       user_id: authId(req),
       address_id,
       paymentMethod,
+      coupon_code,
     });
     return sendSuccess(res, {
       code: 201,
@@ -72,6 +73,5 @@ export const OrderController = {
     return sendSuccess(res, { message: "Order cancelled successfully", data });
   }),
 };
-
 
 export default OrderController;

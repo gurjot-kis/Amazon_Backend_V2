@@ -8,6 +8,7 @@ import BannerRoutes from "./banner.routes.js";
 import OrderRoutes from "./order.routes.js";
 import PaymentRoutes from "./payment.routes.js";
 import WalletSettingsRoutes from "./wallet-settings.routes.js";
+import CouponRoutes from "./coupon.routes.js";
 
 const router = express.Router();
 
@@ -20,5 +21,6 @@ router.use("/banner", BannerRoutes);
 router.use("/order", OrderRoutes);
 router.use("/payment", PaymentRoutes);
 router.use("/wallet-settings", WalletSettingsRoutes);
+router.use("/coupon", CouponRoutes);
 
 export default router;

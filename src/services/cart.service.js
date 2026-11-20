@@ -136,7 +136,6 @@ export const CartService = {
       .map((i) => {
         const product = i.product_id;
         const variant = i.variant_id || null;
-        console.log("variant +++++++++++++++++", variant)
 
         const unitPrice = variant?.sellingPrice || product.sellingPrice;
 

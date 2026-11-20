@@ -1,4 +1,9 @@
 import mongoose from "mongoose";
+import {
+  DISCOUNT_TYPE_VALUES,
+  STATUS,
+  STATUS_VALUES,
+} from "../constants/index.js";
 
 const CouponSchema = new mongoose.Schema(
   {
@@ -24,7 +29,7 @@ const CouponSchema = new mongoose.Schema(
     },
     discount_type: {
       type: String,
-      enum: ["percentage", "fixed"],
+      enum: DISCOUNT_TYPE_VALUES,
       required: [true, "Discount type is required"],
     },
     discount_value: {
@@ -57,32 +62,11 @@ const CouponSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
-    scope: {
-      type: String,
-      enum: ["global", "store"],
-      default: "global",
-    },
     created_by: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
-    created_by_role: {
-      type: String,
-      enum: ["SuperAdmin", "Vendor"],
-      required: true,
-    },
-    vendor_id: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
-    },
-    store_ids: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Store",
-      },
-    ],
     start_date: {
       type: Date,
       required: [true, "Start date is required"],
@@ -93,10 +77,9 @@ const CouponSchema = new mongoose.Schema(
     },
     status: {
       type: Number,
-      enum: [0, 1],
-      default: 1,
+      enum: STATUS_VALUES,
+      default: STATUS.ACTIVE,
     },
-
     website_image: {
       type: String,
       default: null,
@@ -111,10 +94,6 @@ const CouponSchema = new mongoose.Schema(
 
 CouponSchema.index({ createdAt: -1, _id: -1 });
 CouponSchema.index({ status: 1, createdAt: -1, _id: -1 });
-CouponSchema.index({ scope: 1, status: 1, createdAt: -1 });
-CouponSchema.index({ vendor_id: 1, status: 1, createdAt: -1 });
-CouponSchema.index({ store_ids: 1, createdAt: -1 });
-CouponSchema.index({ created_by_role: 1, createdAt: -1 });
 CouponSchema.index({ status: 1, start_date: 1, end_date: 1 });
 CouponSchema.index({ title: "text", description: "text" });
 

@@ -12,7 +12,7 @@ import { computeCartSummary } from "./cart-settings.service.js";
 import PaymentService from "./payment.service.js";
 import { notifyStatusChange } from "./order-notification.service.js";
 import WalletService from "./wallet.service.js";
-// import CouponService from "./coupon.service.js";
+import CouponService from "./coupon.service.js";
 // import NotificationService from "./notification.service.js";
 import {
   ALLOWED_PAYMENT_METHODS,
@@ -118,6 +118,7 @@ const mapShippingAddress = (address) =>
         phone: address.phone,
         addressLine1: address.addressLine1,
         addressLine2: address.addressLine2 || "",
+        label: address.label || "home",
         landmark: address.landmark || "",
         city: address.city,
         state: address.state,
@@ -414,18 +415,18 @@ export const OrderService = {
       let couponId = null;
       let couponCode = "";
 
-      // if (normalizeString(coupon_code)) {
-      //   const applied = await CouponService.applyCoupon({
-      //     code: coupon_code,
-      //     user_id: userId,
-      //     order_amount: summary.items_total,
-      //     order_id: orderId,
-      //     session,
-      //   });
-      //   couponDiscount = applied.discount_amount;
-      //   couponId = applied.coupon_id;
-      //   couponCode = applied.code;
-      // }
+      if (normalizeString(coupon_code)) {
+        const applied = await CouponService.applyCoupon({
+          code: coupon_code,
+          user_id: userId,
+          order_amount: summary.items_total,
+          order_id: orderId,
+          session,
+        });
+        couponDiscount = applied.discount_amount;
+        couponId = applied.coupon_id;
+        couponCode = applied.code;
+      }
 
       const grandTotal =
         Math.round(Math.max(0, summary.grandTotal - couponDiscount) * 100) /
@@ -446,6 +447,7 @@ export const OrderService = {
               phone: address.phone,
               addressLine1: address.addressLine1,
               addressLine2: address.addressLine2 || "",
+              label: address.label || "home",
               landmark: address.landmark || "",
               city: address.city,
               state: address.state,
@@ -553,7 +555,7 @@ export const OrderService = {
         session,
       });
       await restoreStock(cancelled.items, session);
-      // await CouponService.releaseCoupon({ order_id: cancelled._id, session });
+      await CouponService.releaseCoupon({ order_id: cancelled._id, session });
       return cancelled.toObject();
     });
     notifyOrder(order, "cancelled");
@@ -579,7 +581,7 @@ export const OrderService = {
         session,
       });
       await restoreStock(cancelled.items, session);
-      // await CouponService.releaseCoupon({ order_id: cancelled._id, session });
+      await CouponService.releaseCoupon({ order_id: cancelled._id, session });
       return cancelled.toObject();
     });
 
@@ -705,7 +707,7 @@ export const OrderService = {
           session,
         });
         await restoreStock(doc.items, session);
-        // await CouponService.releaseCoupon({ order_id: doc._id, session });
+        await CouponService.releaseCoupon({ order_id: doc._id, session });
       }
 
       return { data: doc.toObject(), statusChanged: true };
