@@ -9,6 +9,7 @@ import UserController from "./user.controller.js";
 import WishListController from "./wishlist.controller.js";
 import WalletController from "./wallet.controller.js";
 import CouponController from "./coupon.controller.js";
+import AppContentController from "./appContent.controller.js";
 
 export {
   BannerController,
@@ -22,4 +23,5 @@ export {
   WishListController,
   WalletController,
   CouponController,
+  AppContentController,
 };
