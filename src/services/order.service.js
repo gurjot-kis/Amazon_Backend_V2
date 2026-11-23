@@ -13,7 +13,7 @@ import PaymentService from "./payment.service.js";
 import { notifyStatusChange } from "./order-notification.service.js";
 import WalletService from "./wallet.service.js";
 import CouponService from "./coupon.service.js";
-// import NotificationService from "./notification.service.js";
+import NotificationService from "./notification.service.js";
 import {
   ALLOWED_PAYMENT_METHODS,
   ORDER_STATUS_VALUES,
@@ -266,7 +266,7 @@ const restoreStock = (items, session) => adjustStock(items, 1, session);
 
 const notifyOrder = (order, status) => {
   void notifyStatusChange(order, status); // email
-  // void NotificationService.orderStatusChanged(order, status); // push
+  void NotificationService.orderStatusChanged(order, status); // push
 };
 
 export const OrderService = {

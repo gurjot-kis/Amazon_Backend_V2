@@ -6,3 +6,5 @@ export * from "./wallet.enum.js";
 export * from "./banner.enum.js";
 export * from "./coupon.enum.js";
 export * from "./address.enum.js";
+export * from "./deviceToken.enum.js";
+export * from "./notification.enum.js";

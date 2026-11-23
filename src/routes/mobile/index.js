@@ -11,6 +11,7 @@ import WishlistRoutes from "./wishlist.routes.js";
 import WalletRoutes from "./wallet.routes.js";
 import CouponRoutes from "./coupon.routes.js";
 import AppContentRoutes from "./appContent.routes.js";
+import DeviceTokenRoutes from "./deviceToken.routes.js";
 
 const router = express.Router();
 
@@ -26,5 +27,6 @@ router.use("/wishlist", WishlistRoutes);
 router.use("/wallet", WalletRoutes);
 router.use("/coupon", CouponRoutes);
 router.use("/app-content", AppContentRoutes);
+router.use("/device-token", DeviceTokenRoutes);
 
 export default router;
