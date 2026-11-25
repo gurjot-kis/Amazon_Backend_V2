@@ -36,7 +36,13 @@ export const CartSettingsController = {
   listCartSettings: async (req, res) => {
     try {
       const { page, limit, user_id, role, status } = req.query || {};
-      const query = applyVendorScope(req, { page, limit, user_id, role, status });
+      const query = applyVendorScope(req, {
+        page,
+        limit,
+        user_id,
+        role,
+        status,
+      });
 
       const { items, pagination } =
         await CartSettingsService.listCartSettings(query);
@@ -49,7 +55,10 @@ export const CartSettingsController = {
       });
     } catch (err) {
       console.error("listCartSettings error:", err);
-      return sendError(res, { code: 500, message: "Unable to fetch cart settings" });
+      return sendError(res, {
+        code: 500,
+        message: "Unable to fetch cart settings",
+      });
     }
   },
 

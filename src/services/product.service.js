@@ -5,6 +5,7 @@ import ProductVariant from "../models/productVariant.model.js";
 import VariantType from "../models/variantType.model.js";
 import VariantOption from "../models/variantOption.model.js";
 import { paginateAggregate } from "./pagination.service.js";
+import NotifyMeService from "./notify-me.service.js";
 
 const normalizeName = (value) => String(value).trim();
 const normalizeSku = (s) =>
@@ -12,13 +13,25 @@ const normalizeSku = (s) =>
     .trim()
     .toUpperCase();
 const SKU_REGEX = /^[A-Z0-9][A-Z0-9\-_]{1,49}$/;
+const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// true when a value was actually provided (not undefined / null / "")
+const hasValue = (v) =>
+  v !== undefined && v !== null && String(v).trim() !== "";
+// variant value wins, otherwise fall back to the product value
+const pickValue = (variantValue, baseValue) =>
+  hasValue(variantValue) ? variantValue : baseValue;
+
+const assertObjectId = (id, label) => {
+  if (!mongoose.Types.ObjectId.isValid(id)) throw new Error(`Invalid ${label}`);
+};
 
 const assertUniqueSkus = async ({
-  productSku,
+  productSku = null, // optional (variant products have no product SKU)
   variants = [],
   excludeProductId = null,
 }) => {
-  if (!SKU_REGEX.test(productSku)) {
+  if (productSku && !SKU_REGEX.test(productSku)) {
     throw new Error("SKU must be 2-50 chars: letters, numbers, - or _");
   }
 
@@ -30,11 +43,13 @@ const assertUniqueSkus = async ({
   if (new Set(variantSkus).size !== variantSkus.length) {
     throw new Error("Duplicate SKU found in variants");
   }
-  if (variantSkus.includes(productSku)) {
+  if (productSku && variantSkus.includes(productSku)) {
     throw new Error("Variant SKU cannot be the same as the product SKU");
   }
 
-  const all = [productSku, ...variantSkus];
+  const all = [productSku, ...variantSkus].filter(Boolean);
+  if (all.length === 0) return; // nothing to check
+
   const productFilter = { sku: { $in: all } };
   const variantFilter = { sku: { $in: all } };
   if (excludeProductId) {
@@ -109,20 +124,44 @@ const assertPricing = (
     throw new Error(`${label}: selling price cannot be greater than MRP`);
 };
 
-const assertVariantNumbers = (variants = [], base) => {
+// Product-level pricing:
+//  - no variants  -> all three are mandatory and validated
+//  - has variants -> optional, but if any one is sent, all three are validated
+const assertBasePricing = ({ hasVariants, costPrice, sellingPrice, price }) => {
+  if (!hasVariants) {
+    if (!hasValue(costPrice)) throw new Error("Cost price is required");
+    if (!hasValue(sellingPrice)) throw new Error("Selling price is required");
+    if (!hasValue(price)) throw new Error("Price is required");
+    assertPricing({ costPrice, sellingPrice, price });
+    return;
+  }
+  if ([costPrice, sellingPrice, price].some(hasValue)) {
+    assertPricing({ costPrice, sellingPrice, price });
+  }
+};
+
+// Each variant must end up with its own valid pricing
+// (its own value, or the product value if one was provided)
+const assertVariantNumbers = (variants = [], base = {}) => {
   variants.forEach((v, i) => {
     const label = `Variant #${i + 1}`;
     toNum(v.stock ?? 0, `${label} stock`);
     assertPricing(
       {
-        costPrice: v.costPrice ?? base.costPrice,
-        sellingPrice: v.sellingPrice ?? base.sellingPrice,
-        price: v.price ?? base.price,
+        costPrice: pickValue(v.costPrice, base.costPrice),
+        sellingPrice: pickValue(v.sellingPrice, base.sellingPrice),
+        price: pickValue(v.price, base.price),
       },
       label,
     );
   });
 };
+
+const buildVariantPricing = (v, base = {}) => ({
+  costPrice: Number(pickValue(v.costPrice, base.costPrice)),
+  sellingPrice: Number(pickValue(v.sellingPrice, base.sellingPrice)),
+  price: Number(pickValue(v.price, base.price)),
+});
 
 const validateVariants = async (variantTypes, variants) => {
   const typeIds = variantTypes.map(String);
@@ -225,18 +264,19 @@ export const ProductService = {
     variantTypes,
     variants,
     imageGroupTypeId,
+    unit,
   }) => {
     if (!name) throw new Error("Product name is required");
     if (!category_id) throw new Error("Category is required");
-    if (!sku) throw new Error("SKU is required");
     if (!mainImage) throw new Error("Main image is required");
-    if (!currency) throw new Error("Currency is required");
-    if (costPrice === undefined) throw new Error("Cost price is required");
-    if (sellingPrice === undefined)
-      throw new Error("Selling price is required");
-    if (price === undefined) throw new Error("Price is required");
 
-    assertPricing({ costPrice, sellingPrice, price });
+    // these are mandatory ONLY when the product has no variants
+    if (!hasVariants) {
+      if (!hasValue(sku)) throw new Error("SKU is required");
+      if (!hasValue(currency)) throw new Error("Currency is required");
+    }
+
+    assertBasePricing({ hasVariants, costPrice, sellingPrice, price });
     if (hasVariants)
       assertVariantNumbers(variants, { costPrice, sellingPrice, price });
     if (!hasVariants) toNum(stock ?? 0, "Stock");
@@ -255,7 +295,7 @@ export const ProductService = {
       await validateVariants(variantTypes, variants);
     }
 
-    //category validations
+    // category validations
     const category = await Category.findById(category_id)
       .select("_id status")
       .lean();
@@ -267,9 +307,7 @@ export const ProductService = {
         "Product can only be added to a leaf category (category with no subcategories)",
       );
 
-    // const existingSku = await Product.findOne({ sku: sku.trim() }).lean();
-    // if (existingSku) throw new Error("Product with this SKU already exists");
-    const normalizedSku = normalizeSku(sku);
+    const normalizedSku = hasValue(sku) ? normalizeSku(sku) : null;
     await assertUniqueSkus({
       productSku: normalizedSku,
       variants: hasVariants ? variants : [],
@@ -285,11 +323,13 @@ export const ProductService = {
         ? String(short_description).trim()
         : "",
       category_id,
-      sku: normalizedSku,
-      currency: currency.trim().toUpperCase(),
-      costPrice: Number(costPrice),
-      sellingPrice: Number(sellingPrice),
-      price: Number(price),
+      ...(normalizedSku && { sku: normalizedSku }),
+      ...(hasValue(currency) && {
+        currency: String(currency).trim().toUpperCase(),
+      }),
+      ...(hasValue(costPrice) && { costPrice: Number(costPrice) }),
+      ...(hasValue(sellingPrice) && { sellingPrice: Number(sellingPrice) }),
+      ...(hasValue(price) && { price: Number(price) }),
       mainImage,
       featuredImages: featuredImages || [],
       stock: stockCount,
@@ -300,6 +340,7 @@ export const ProductService = {
       hasVariants: hasVariants || false,
       variantTypes: hasVariants ? variantTypes : [],
       imageGroupTypeId: hasVariants ? imageGroupTypeId : null,
+      ...(hasValue(unit) && { unit }),
     });
 
     try {
@@ -318,18 +359,13 @@ export const ProductService = {
 
     // create product variants if hasVariants is true
     if (hasVariants && variants?.length > 0) {
+      const base = { costPrice, sellingPrice, price };
       const variantDocs = variants.map((v) => ({
         product_id: product._id,
         combination: v.combination,
         sku: normalizeSku(v.sku),
-        costPrice:
-          v.costPrice !== undefined ? Number(v.costPrice) : Number(costPrice),
-        sellingPrice:
-          v.sellingPrice !== undefined
-            ? Number(v.sellingPrice)
-            : Number(sellingPrice),
-        price: v.price !== undefined ? Number(v.price) : Number(price),
-        stock: v.stock !== undefined ? Number(v.stock) : 0,
+        ...buildVariantPricing(v, base),
+        stock: Number(v.stock) || 0,
         stockStatus: Number(v.stock) > 0 ? "in_stock" : "out_of_stock",
         images: v.images || [],
         status: "active",
@@ -348,9 +384,12 @@ export const ProductService = {
     status = "",
   } = {}) => {
     const matchStage = {};
-    if (search) matchStage.name = { $regex: search, $options: "i" };
-    if (category_id)
+    if (search)
+      matchStage.name = { $regex: escapeRegex(search), $options: "i" };
+    if (category_id) {
+      assertObjectId(category_id, "category ID");
       matchStage.category_id = new mongoose.Types.ObjectId(category_id);
+    }
     if (status) matchStage.status = status;
 
     const pipeline = [
@@ -366,6 +405,39 @@ export const ProductService = {
       },
       { $unwind: { path: "$category", preserveNullAndEmptyArrays: true } },
       {
+        $lookup: {
+          from: "productvariants",
+          let: { pid: "$_id", hv: "$hasVariants" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$product_id", "$$pid"] },
+                    { $eq: ["$$hv", true] },
+                    { $eq: ["$status", "active"] },
+                  ],
+                },
+              },
+            },
+            {
+              $group: {
+                _id: null,
+                minPrice: { $min: "$sellingPrice" },
+                maxPrice: { $max: "$sellingPrice" },
+              },
+            },
+          ],
+          as: "variantPriceRange",
+        },
+      },
+      {
+        $unwind: {
+          path: "$variantPriceRange",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
         $project: {
           _id: 1,
           name: 1,
@@ -380,6 +452,17 @@ export const ProductService = {
           status: 1,
           hasVariants: 1,
           category: 1,
+          unit: 1,
+          priceRange: {
+            $cond: {
+              if: "$hasVariants",
+              then: {
+                min: "$variantPriceRange.minPrice",
+                max: "$variantPriceRange.maxPrice",
+              },
+              else: null,
+            },
+          },
           createdAt: 1,
         },
       },
@@ -395,6 +478,8 @@ export const ProductService = {
   },
 
   getProductById: async (id) => {
+    assertObjectId(id, "product ID");
+
     const product = await Product.findById(id)
       .populate("category_id", "name _id category_image")
       .populate("variantTypes", "name")
@@ -415,7 +500,9 @@ export const ProductService = {
     return product;
   },
 
-  getMobileProductById: async (id) => {
+  getMobileProductById: async (id, { user_id } = {}) => {
+    assertObjectId(id, "product ID");
+
     const product = await Product.findById(id)
       .populate("category_id", "name _id category_image")
       .populate("variantTypes", "name _id")
@@ -423,6 +510,22 @@ export const ProductService = {
       .lean();
 
     if (!product) throw new Error("Product not found");
+    if (product.status !== "active") throw new Error("Product not found");
+
+    // notify-me info (only when we know the user)
+    const notifyRows = user_id
+      ? await NotifyMeService.getUserRequests({
+          user_id,
+          product_ids: [product._id],
+        })
+      : [];
+    const notifyByVariant = new Map(
+      notifyRows.map((r) => [String(r.variant_id || "none"), String(r._id)]),
+    );
+    const notifyFields = (variantId) => {
+      const requestId = notifyByVariant.get(String(variantId || "none"));
+      return { isNotifyEnabled: !!requestId, notifyMeId: requestId || null };
+    };
 
     if (!product.hasVariants) {
       return {
@@ -442,7 +545,9 @@ export const ProductService = {
         stockStatus: product.stockStatus,
         status: product.status,
         category: product.category_id,
+        unit: product.unit,
         hasVariants: false,
+        ...notifyFields(null),
         variantTypes: [],
         swatches: [],
       };
@@ -478,6 +583,7 @@ export const ProductService = {
         stockStatus: product.stockStatus,
         status: product.status,
         category: product.category_id,
+        unit: product.unit,
         hasVariants: true,
         variantTypes: product.variantTypes,
         imageGroupType: null,
@@ -486,12 +592,15 @@ export const ProductService = {
             option: null,
             options: variants.map((v) => ({
               variantId: v._id,
+              ...notifyFields(v._id),
               sku: v.sku,
               costPrice: v.costPrice,
               sellingPrice: v.sellingPrice,
               price: v.price,
               stock: v.stock,
               stockStatus: v.stockStatus,
+              images: v.images || [],
+              thumbnail: v.images?.[0] || null,
               attributes: v.combination.map((c) => ({
                 type: {
                   _id: c.variant_type_id._id,
@@ -530,7 +639,7 @@ export const ProductService = {
             meta: groupCombo.variant_option_id.meta || {},
           },
           images: v.images, // all images for this color
-          thumbnail: v.images[0] || null, // first image as swatch thumbnail
+          thumbnail: v.images?.[0] || null, // first image as swatch thumbnail
           options: [], // available sizes/other options for this color
         });
       }
@@ -542,6 +651,7 @@ export const ProductService = {
 
       swatchMap.get(groupOptId).options.push({
         variantId: v._id,
+        ...notifyFields(v._id),
         sku: v.sku,
         costPrice: v.costPrice,
         sellingPrice: v.sellingPrice,
@@ -580,6 +690,7 @@ export const ProductService = {
       stockStatus: product.stockStatus,
       status: product.status,
       category: product.category_id,
+      unit: product.unit,
       hasVariants: true,
       variantTypes: product.variantTypes,
       imageGroupType:
@@ -592,6 +703,7 @@ export const ProductService = {
 
   getProductsByCategoryId: async ({
     category_id,
+    user_id,
     page = 1,
     limit = 10,
     search = "",
@@ -601,13 +713,41 @@ export const ProductService = {
       throw new Error("Valid category ID is required");
     }
 
-    return await ProductService.getAllProducts({
+    const result = await ProductService.getAllProducts({
       category_id,
       page,
       limit,
       search,
       status,
     });
+
+    // notify-me enrichment only when we know the user
+    if (!user_id) return result;
+
+    const rows = await NotifyMeService.getUserRequests({
+      user_id,
+      product_ids: result.data.map((p) => p._id),
+    });
+
+    // productId -> { notifyMeId }  (notifyMeId only for products without variants)
+    const notifyByProduct = new Map();
+    rows.forEach((r) => {
+      const key = String(r.product_id);
+      const entry = notifyByProduct.get(key) || { notifyMeId: null };
+      if (!r.variant_id) entry.notifyMeId = String(r._id);
+      notifyByProduct.set(key, entry);
+    });
+
+    result.data = result.data.map((p) => {
+      const entry = notifyByProduct.get(String(p._id));
+      return {
+        ...p,
+        isNotifyEnabled: !!entry,
+        notifyRequestId: entry?.notifyMeId || null,
+      };
+    });
+
+    return result;
   },
 
   updateProduct: async (
@@ -629,21 +769,23 @@ export const ProductService = {
       variantTypes,
       variants,
       imageGroupTypeId,
+      unit,
     },
   ) => {
+    assertObjectId(id, "product ID");
     const product = await Product.findById(id).lean();
     if (!product) throw new Error("Product not found");
 
     if (!name) throw new Error("Product name is required");
     if (!category_id) throw new Error("Category is required");
-    if (!sku) throw new Error("SKU is required");
-    if (!currency) throw new Error("Currency is required");
-    if (costPrice === undefined) throw new Error("Cost price is required");
-    if (sellingPrice === undefined)
-      throw new Error("Selling price is required");
-    if (price === undefined) throw new Error("Price is required");
 
-    assertPricing({ costPrice, sellingPrice, price });
+    // these are mandatory ONLY when the product has no variants
+    if (!hasVariants) {
+      if (!hasValue(sku)) throw new Error("SKU is required");
+      if (!hasValue(currency)) throw new Error("Currency is required");
+    }
+
+    assertBasePricing({ hasVariants, costPrice, sellingPrice, price });
     if (hasVariants)
       assertVariantNumbers(variants, { costPrice, sellingPrice, price });
     if (!hasVariants) toNum(stock ?? 0, "Stock");
@@ -665,7 +807,7 @@ export const ProductService = {
       await validateVariants(variantTypes, variants);
     }
 
-    const normalizedSku = normalizeSku(sku);
+    const normalizedSku = hasValue(sku) ? normalizeSku(sku) : null;
     await assertUniqueSkus({
       productSku: normalizedSku,
       variants: hasVariants ? variants : [],
@@ -692,35 +834,52 @@ export const ProductService = {
         ? await generateUniqueSlug(name, id)
         : product.slug;
 
+    // optional base fields: set when provided, remove when not provided
+    // (only possible for variant products; non-variant ones are validated above)
+    const optionalSet = {};
+    const optionalUnset = {};
+    const setOrUnset = (key, provided, value) => {
+      if (provided) optionalSet[key] = value;
+      else optionalUnset[key] = "";
+    };
+    setOrUnset("sku", !!normalizedSku, normalizedSku);
+    setOrUnset(
+      "currency",
+      hasValue(currency),
+      hasValue(currency) ? String(currency).trim().toUpperCase() : null,
+    );
+    setOrUnset("costPrice", hasValue(costPrice), Number(costPrice));
+    setOrUnset("sellingPrice", hasValue(sellingPrice), Number(sellingPrice));
+    setOrUnset("price", hasValue(price), Number(price));
+
+    const updateDoc = {
+      $set: {
+        name: normalizeName(name),
+        slug,
+        description: description ? String(description).trim() : "",
+        short_description: short_description
+          ? String(short_description).trim()
+          : "",
+        category_id,
+        ...optionalSet,
+        stock: stockCount,
+        stockStatus: stockCount > 0 ? "in_stock" : "out_of_stock",
+        mainImage: resolvedMainImage,
+        featuredImages: featuredImages || [],
+        hasVariants: hasVariants || false,
+        variantTypes: hasVariants ? variantTypes : [],
+        imageGroupTypeId: hasVariants ? imageGroupTypeId : null,
+        ...(hasValue(unit) && { unit }),
+      },
+      ...(Object.keys(optionalUnset).length > 0 && { $unset: optionalUnset }),
+    };
+
     let updated;
     try {
-      updated = await Product.findByIdAndUpdate(
-        id,
-        {
-          $set: {
-            name: normalizeName(name),
-            slug,
-            description: description ? String(description).trim() : "",
-            short_description: short_description
-              ? String(short_description).trim()
-              : "",
-            category_id,
-            sku: normalizedSku,
-            currency: currency.trim().toUpperCase(),
-            costPrice: Number(costPrice),
-            sellingPrice: Number(sellingPrice),
-            price: Number(price),
-            stock: stockCount,
-            stockStatus: stockCount > 0 ? "in_stock" : "out_of_stock",
-            mainImage: resolvedMainImage,
-            featuredImages: featuredImages || [],
-            hasVariants: hasVariants || false,
-            variantTypes: hasVariants ? variantTypes : [],
-            imageGroupTypeId: hasVariants ? imageGroupTypeId : null,
-          },
-        },
-        { new: true, runValidators: true },
-      ).lean();
+      updated = await Product.findByIdAndUpdate(id, updateDoc, {
+        new: true,
+        runValidators: true,
+      }).lean();
     } catch (err) {
       if (err.code === 11000) {
         if (err.keyPattern?.sku)
@@ -732,6 +891,8 @@ export const ProductService = {
     }
 
     if (hasVariants && variants?.length > 0) {
+      const base = { costPrice, sellingPrice, price };
+
       // fetch all existing variants of this product
       const existingVariants = await ProductVariant.find({
         product_id: id,
@@ -778,19 +939,8 @@ export const ProductService = {
             product_id: id,
             combination: incoming.combination,
             sku: normalizeSku(incoming.sku),
-            costPrice:
-              incoming.costPrice !== undefined
-                ? Number(incoming.costPrice)
-                : Number(costPrice),
-            sellingPrice:
-              incoming.sellingPrice !== undefined
-                ? Number(incoming.sellingPrice)
-                : Number(sellingPrice),
-            price:
-              incoming.price !== undefined
-                ? Number(incoming.price)
-                : Number(price),
-            stock: incoming.stock !== undefined ? Number(incoming.stock) : 0,
+            ...buildVariantPricing(incoming, base),
+            stock: Number(incoming.stock) || 0,
             stockStatus:
               Number(incoming.stock) > 0 ? "in_stock" : "out_of_stock",
             images: incoming.images || [],
@@ -803,24 +953,15 @@ export const ProductService = {
         await ProductVariant.deleteMany({ _id: { $in: toDelete } });
       }
 
-      // execute all 3 operations
+      // execute update + insert operations
       await Promise.all([
         // update existing variants
         ...toUpdate.map(({ id: varId, data }) =>
           ProductVariant.findByIdAndUpdate(varId, {
             $set: {
               sku: normalizeSku(data.sku),
-              costPrice:
-                data.costPrice !== undefined
-                  ? Number(data.costPrice)
-                  : Number(costPrice),
-              sellingPrice:
-                data.sellingPrice !== undefined
-                  ? Number(data.sellingPrice)
-                  : Number(sellingPrice),
-              price:
-                data.price !== undefined ? Number(data.price) : Number(price),
-              stock: data.stock !== undefined ? Number(data.stock) : 0,
+              ...buildVariantPricing(data, base),
+              stock: Number(data.stock) || 0,
               stockStatus: Number(data.stock) > 0 ? "in_stock" : "out_of_stock",
               images: data.images || [],
               status: data.status || "active",
@@ -837,10 +978,16 @@ export const ProductService = {
       await ProductVariant.deleteMany({ product_id: id });
     }
 
+    // fire notify-me hook without blocking the response
+    NotifyMeService.notifyForProduct(id).catch((e) =>
+      console.error("[notify-me] hook failed:", e?.message),
+    );
+
     return updated;
   },
 
   updateProductStatus: async (id, status) => {
+    assertObjectId(id, "product ID");
     if (!["pending", "active", "inactive", "rejected"].includes(status)) {
       throw new Error("Invalid status value");
     }
@@ -858,12 +1005,14 @@ export const ProductService = {
   },
 
   deleteProduct: async (id) => {
-    const product = await Product.findById(id).lean();
+    assertObjectId(id, "product ID");
+    const product = await Product.findById(id).select("_id").lean();
     if (!product) throw new Error("Product not found");
 
     await Promise.all([
       Product.findByIdAndDelete(id),
       ProductVariant.deleteMany({ product_id: id }),
+      NotifyMeService.cancelForProduct(id),
     ]);
   },
 };

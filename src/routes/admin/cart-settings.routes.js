@@ -18,6 +18,9 @@ router
   .patch(CartSettingsController.updateCartSettings)
   .delete(CartSettingsController.deleteCartSettings);
 
-router.patch("/:id/toggle-status", CartSettingsController.toggleCartSettingsStatus);
+router.patch(
+  "/:id/toggle-status",
+  CartSettingsController.toggleCartSettingsStatus,
+);
 
 export default router;

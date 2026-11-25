@@ -6,60 +6,45 @@ import { sendSuccess } from "../../helpers/response.helper.js";
 import Product from "../../models/product.model.js";
 import ProductService from "../../services/product.service.js";
 
+const parseJson = (v) => (v ? (typeof v === "string" ? JSON.parse(v) : v) : []);
+const toBool = (v) => v === true || v === "true";
+// multipart/form-data sends empty fields as "" -> treat them as "not provided"
+const emptyToUndefined = (v) =>
+  v === "" || v === null || v === undefined ? undefined : v;
+
+const pickProductFields = (body) => ({
+  name: body.name,
+  description: body.description,
+  short_description: body.short_description,
+  category_id: body.category_id,
+  sku: emptyToUndefined(body.sku),
+  currency: emptyToUndefined(body.currency),
+  costPrice: emptyToUndefined(body.costPrice),
+  sellingPrice: emptyToUndefined(body.sellingPrice),
+  price: emptyToUndefined(body.price),
+  stock: emptyToUndefined(body.stock),
+  mainImage: body.mainImage,
+  featuredImages: body.featuredImages,
+  hasVariants: toBool(body.hasVariants),
+  variantTypes: parseJson(body.variantTypes),
+  variants: parseJson(body.variants),
+  imageGroupTypeId: body.imageGroupTypeId,
+  unit: emptyToUndefined(body.unit),
+});
+
 export const ProductController = {
   createProduct: async (req, res, next) => {
     try {
       const body = applyProductUploads(req.body, req.files);
 
-      const {
-        name,
-        description,
-        short_description,
-        category_id,
-        sku,
-        currency,
-        costPrice,
-        sellingPrice,
-        price,
-        stock,
-        mainImage,
-        featuredImages,
-        hasVariants,
-        variantTypes,
-        variants,
-        imageGroupTypeId,
-      } = body;
-
       const product = await ProductService.createProduct({
-        name,
-        description,
-        short_description,
-        category_id,
-        sku,
-        currency,
-        costPrice,
-        sellingPrice,
-        price,
-        stock,
-        mainImage,
-        featuredImages,
+        ...pickProductFields(body),
         user_id: req.user._id,
         role: req.user.role,
-        hasVariants: hasVariants === "true" || hasVariants === true,
-        variantTypes: variantTypes
-          ? typeof variantTypes === "string"
-            ? JSON.parse(variantTypes)
-            : variantTypes
-          : [],
-        variants: variants
-          ? typeof variants === "string"
-            ? JSON.parse(variants)
-            : variants
-          : [],
-        imageGroupTypeId,
       });
 
       return sendSuccess(res, {
+        code: 201,
         message: "Product created successfully",
         data: product,
       });
@@ -92,8 +77,7 @@ export const ProductController = {
 
   getProductById: async (req, res, next) => {
     try {
-      const { id } = req.params;
-      const product = await ProductService.getProductById(id);
+      const product = await ProductService.getProductById(req.params.id);
 
       return sendSuccess(res, {
         message: "Product fetched successfully",
@@ -108,60 +92,18 @@ export const ProductController = {
     try {
       const { id } = req.params;
 
+      // needed for existing images
       const existing = await Product.findById(id)
         .select("featuredImages mainImage")
         .lean();
-      if (!existing) {
-        return sendSuccess(res, { message: "Product not found" }, 404);
-      }
+      if (!existing) throw new Error("Product not found");
 
       const body = applyProductUploadsForUpdate(req.body, req.files, existing);
 
-      const {
-        name,
-        description,
-        short_description,
-        category_id,
-        sku,
-        currency,
-        costPrice,
-        sellingPrice,
-        price,
-        stock,
-        mainImage,
-        featuredImages,
-        hasVariants,
-        variantTypes,
-        variants,
-        imageGroupTypeId,
-      } = body;
-
-      const updated = await ProductService.updateProduct(id, {
-        name,
-        description,
-        short_description,
-        category_id,
-        sku,
-        currency,
-        costPrice,
-        sellingPrice,
-        price,
-        stock,
-        mainImage,
-        featuredImages,
-        hasVariants: hasVariants === "true" || hasVariants === true,
-        variantTypes: variantTypes
-          ? typeof variantTypes === "string"
-            ? JSON.parse(variantTypes)
-            : variantTypes
-          : [],
-        variants: variants
-          ? typeof variants === "string"
-            ? JSON.parse(variants)
-            : variants
-          : [],
-        imageGroupTypeId,
-      });
+      const updated = await ProductService.updateProduct(
+        id,
+        pickProductFields(body),
+      );
 
       return sendSuccess(res, {
         message: "Product updated successfully",
@@ -174,12 +116,14 @@ export const ProductController = {
 
   updateProductStatus: async (req, res, next) => {
     try {
-      const { id } = req.params;
       const { status } = req.body;
-
       if (!status) throw new Error("Status is required");
 
-      const updated = await ProductService.updateProductStatus(id, status);
+      const updated = await ProductService.updateProductStatus(
+        req.params.id,
+        status,
+      );
+
       return sendSuccess(res, {
         message: `Product status updated to ${updated.status} successfully`,
         data: updated,
@@ -191,8 +135,7 @@ export const ProductController = {
 
   deleteProduct: async (req, res, next) => {
     try {
-      const { id } = req.params;
-      await ProductService.deleteProduct(id);
+      await ProductService.deleteProduct(req.params.id);
       return sendSuccess(res, {
         message: "Product deleted successfully",
         data: null,
