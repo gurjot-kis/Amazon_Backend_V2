@@ -12,6 +12,9 @@ import WalletRoutes from "./wallet.routes.js";
 import CouponRoutes from "./coupon.routes.js";
 import AppContentRoutes from "./appContent.routes.js";
 import DeviceTokenRoutes from "./deviceToken.routes.js";
+import NotificationRoutes from "./notification.routes.js";
+import NotifyMeRoutes from "./notify-me.routes.js";
+import DeliveryRoutes from "./delivery.routes.js";
 
 const router = express.Router();
 
@@ -28,5 +31,8 @@ router.use("/wallet", WalletRoutes);
 router.use("/coupon", CouponRoutes);
 router.use("/app-content", AppContentRoutes);
 router.use("/device-token", DeviceTokenRoutes);
+router.use("/notification", NotificationRoutes);
+router.use("/notify-me", NotifyMeRoutes);
+router.use("/delivery", DeliveryRoutes);
 
 export default router;

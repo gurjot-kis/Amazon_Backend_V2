@@ -36,7 +36,6 @@ const ORDER_MESSAGES = {
 
 const orderData = (order, screen = "order_details") => ({
   orderId: order._id,
-  storeId: order.store_id,
   screen,
 });
 
@@ -89,7 +88,6 @@ export const NotificationService = {
       data: {
         productId: String(product._id),
         variantId: variantId ? String(variantId) : "",
-        storeId: String(product.store_id),
         screen: "product_details",
       },
     }),

@@ -106,6 +106,7 @@ export const sendPush = async ({
 
     await DeviceTokenService.removeInvalidTokens(invalid);
     result.ok = true;
+    console.log("result <><><><>", result);
     return result;
   } catch (error) {
     console.error(`[push] ${type} failed:`, error);

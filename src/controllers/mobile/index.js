@@ -11,6 +11,8 @@ import WalletController from "./wallet.controller.js";
 import CouponController from "./coupon.controller.js";
 import AppContentController from "./appContent.controller.js";
 import DeviceTokenController from "./deviceToken.controller.js";
+import NotificationController from "./notification.controller.js";
+import DeliveryController from "./delivery.controller.js";
 
 export {
   BannerController,
@@ -26,4 +28,6 @@ export {
   CouponController,
   AppContentController,
   DeviceTokenController,
+  NotificationController,
+  DeliveryController,
 };
