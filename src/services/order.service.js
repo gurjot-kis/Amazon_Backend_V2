@@ -173,6 +173,51 @@ const mapOrder = (order) => ({
   updatedAt: order.updatedAt,
 });
 
+const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
+
+const getNextStatuses = (status) => STATUS_TRANSITIONS[status] || [];
+
+const mapBillBreakdown = (order) => {
+  const couponDiscount = round2(order.coupon_discount);
+
+  return {
+    price_total: round2(order.price_total), // MRP total
+    discount: round2(order.discount), // MRP - selling price
+    items_total: round2(order.items_total), // sum of selling prices
+    handling_charge: round2(order.handling_charge), // platform fee
+    delivery_charge: round2(order.delivery_charge),
+    delivery_waived: Boolean(order.delivery_waived),
+    small_cart_charge: round2(order.small_cart_charge),
+    coupon: {
+      applied: couponDiscount > 0 || Boolean(order.coupon_code),
+      code: order.coupon_code || "",
+      discount: couponDiscount,
+    },
+    grandTotal: round2(order.grandTotal), // final payable amount
+  };
+};
+
+const mapOrderDetails = (order, userName = null) => {
+  const items = order.items || [];
+  return {
+    _id: idToString(order._id),
+    orderId: shortId(order._id),
+    user_name: userName,
+    items: items.map(mapItem),
+    totalItems: items.reduce((acc, i) => acc + Number(i.quantity || 0), 0),
+    vendorTotal: items.reduce((acc, i) => acc + Number(i.itemTotal || 0), 0),
+    billBreakdown: mapBillBreakdown(order),
+    grandTotal: Number(order.grandTotal || 0),
+    shippingAddress: mapShippingAddress(order.shippingAddress),
+    paymentMethod: order.paymentMethod,
+    paymentReceived: Number(order.paymentReceived || 0),
+    status: order.status,
+    nextStatuses: getNextStatuses(order.status),
+    createdAt: order.createdAt,
+    updatedAt: order.updatedAt,
+  };
+};
+
 const getUserNameMap = async (orders) => {
   const ids = [
     ...new Set(orders.map((o) => idToString(o.user_id)).filter(Boolean)),
@@ -663,10 +708,10 @@ export const OrderService = {
     if (!order) throw new AppError(404, "Order not found");
 
     const userMap = await getUserNameMap([order]);
-    return {
-      ...mapOrder(order),
-      user_name: userMap.get(idToString(order.user_id)) || null,
-    };
+    return mapOrderDetails(
+      order,
+      userMap.get(idToString(order.user_id)) || null,
+    );
   },
 
   updateOrderStatus: async ({ order_id, status }) => {
@@ -678,7 +723,7 @@ export const OrderService = {
       throw new AppError(400, "Invalid order status");
     }
 
-    const order = await runInTransaction(async (session) => {
+    const result = await runInTransaction(async (session) => {
       const doc = await Order.findById(orderId).session(session).exec();
       if (!doc) throw new AppError(404, "Order not found");
 
@@ -713,8 +758,13 @@ export const OrderService = {
       return { data: doc.toObject(), statusChanged: true };
     });
 
-    if (order.statusChanged) notifyOrder(order.data, nextStatus);
-    return mapOrder(order.data);
+    if (result.statusChanged) notifyOrder(result.data, nextStatus);
+
+    const userMap = await getUserNameMap([result.data]);
+    return mapOrderDetails(
+      result.data,
+      userMap.get(idToString(result.data.user_id)) || null,
+    );
   },
 };
 

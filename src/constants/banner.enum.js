@@ -1,6 +1,6 @@
 export const BANNER_UPLOAD_AREA = Object.freeze({
-  WEBSITE: "website",
   APP: "app",
+  WEBSITE: "website",
 });
 export const BANNER_POSITION = Object.freeze({
   HOME_TOP: "home_top",

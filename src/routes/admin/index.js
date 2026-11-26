@@ -19,7 +19,7 @@ router.use("/variant-types", VariantTypeRoutes);
 router.use("/variant-options", VariantOptionRoutes);
 router.use("/cart-settings", CartSettingsRoutes);
 router.use("/banner", BannerRoutes);
-router.use("/order", OrderRoutes);
+router.use("/orders", OrderRoutes);
 router.use("/payment", PaymentRoutes);
 router.use("/wallet-settings", WalletSettingsRoutes);
 router.use("/coupon", CouponRoutes);

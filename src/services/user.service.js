@@ -98,6 +98,7 @@ export const UserService = {
       fullName: u.name,
       email: u.email,
       phone: u.phone || "",
+      countryCode: u.countryCode || "+91",
       address: u.address || "",
       latitude:
         u.latitude != null && Number.isFinite(u.latitude) ? u.latitude : null,

@@ -61,6 +61,7 @@ export const BannerController = {
         data,
       });
     } catch (err) {
+      console.log("err", err)
       return handleError(res, err, "Banner creation failed");
     }
   },

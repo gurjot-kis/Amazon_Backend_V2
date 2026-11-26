@@ -4,14 +4,10 @@ import { authorizeRoles, ROLES } from "../../middlewares/role.middleware.js";
 import { OrderController } from "../../controllers/admin/index.js";
 
 const router = express.Router();
-router.use(authMiddleware, authorizeRoles(ROLES.USER, ROLES.SUPER_ADMIN));
+router.use(authMiddleware, authorizeRoles(ROLES.SUPER_ADMIN));
 
-router.get("/orders", OrderController.listOrders);
-router.get("/orders/:order_id", OrderController.getOrderById);
+router.get("/", OrderController.listOrders);
+router.get("/:order_id", OrderController.getOrderById);
 router.patch("/:order_id/status", OrderController.updateOrderStatus);
 
 export default router;
-
-// Vendor Order routes
-// router.get("/vendor/orders", guard, VendorOrderController.listOrders);
-// router.get("/vendor/orders/:order_id", guard, VendorOrderController.getOrderById);

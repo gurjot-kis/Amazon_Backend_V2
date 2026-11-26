@@ -1,5 +1,6 @@
 import { sendSuccess, sendError } from "../../helpers/response.helper.js";
 import { OrderService } from "../../services/order.service.js";
+import { AppError } from "../../utils/AppError.js";
 
 const respondError = (res, err, fallbackMessage) => {
   if (err instanceof AppError) {
@@ -47,10 +48,9 @@ export const OrderController = {
   updateOrderStatus: handle(
     "Unable to update order status",
     async (req, res) => {
-      const { status } = req.body || {};
       const data = await OrderService.updateOrderStatus({
         order_id: req.params?.order_id,
-        status,
+        status: req.body?.status,
       });
       return sendSuccess(res, {
         message: "Order status updated successfully",
@@ -61,30 +61,3 @@ export const OrderController = {
 };
 
 export default OrderController;
-
-/* --------------------------------- Vendor ---------------------------------- */
-
-// export const VendorOrderController = {
-//   listOrders: handle("Unable to fetch orders", async (req, res) => {
-//     const { status, page, limit } = req.query || {};
-//     const { orders, pagination } = await OrderService.listVendorOrders({
-//       vendor_id: authId(req),
-//       status,
-//       page,
-//       limit,
-//     });
-//     return sendSuccess(res, {
-//       message: "Orders fetched successfully",
-//       data: orders,
-//       pagination,
-//     });
-//   }),
-
-//   getOrderById: handle("Unable to fetch order", async (req, res) => {
-//     const data = await OrderService.getVendorOrderById({
-//       vendor_id: authId(req),
-//       order_id: req.params?.order_id,
-//     });
-//     return sendSuccess(res, { message: "Order fetched successfully", data });
-//   }),
-// };
