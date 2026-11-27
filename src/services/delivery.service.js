@@ -1,5 +1,6 @@
 import User from "../models/user.model.js";
 import Address from "../models/address.model.js";
+import Store from "../models/store.model.js";
 import { toObjectId } from "../utils/object-id.js";
 
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -34,8 +35,8 @@ export const DeliveryService = {
 
     if (!user) throw new Error("User not found");
 
-    // Fetch user's default address and SuperAdmin coordinates
-    const [address, superAdmin] = await Promise.all([
+    // Fetch user's default address and SuperAdmin store coordinates
+    const [address, store] = await Promise.all([
       Address.findOne({
         user_id: userId,
         isDefault: true,
@@ -43,12 +44,10 @@ export const DeliveryService = {
         .select("latitude longitude")
         .lean(),
 
-      User.findOne({
-        role: "SuperAdmin",
-        isDeleted: false,
-        status: 1,
+      Store.findOne({
+        status: "active",
       })
-        .select("latitude longitude")
+        .select("location")
         .lean(),
     ]);
 
@@ -57,9 +56,9 @@ export const DeliveryService = {
       longitude: address?.longitude ?? null,
     };
 
-    const superAdminCoordinates = {
-      latitude: superAdmin?.latitude ? Number(superAdmin.latitude) : null,
-      longitude: superAdmin?.longitude ? Number(superAdmin.longitude) : null,
+    const storeCoordinates = {
+      latitude: store?.location?.coordinates?.[1] ?? null,
+      longitude: store?.location?.coordinates?.[0] ?? null,
     };
 
     let distanceKm = null;
@@ -67,22 +66,22 @@ export const DeliveryService = {
     if (
       userCoordinates.latitude !== null &&
       userCoordinates.longitude !== null &&
-      superAdminCoordinates.latitude !== null &&
-      superAdminCoordinates.longitude !== null &&
+      storeCoordinates.latitude !== null &&
+      storeCoordinates.longitude !== null &&
       Number.isFinite(Number(userCoordinates.latitude)) &&
       Number.isFinite(Number(userCoordinates.longitude))
     ) {
       distanceKm = calculateDistance(
         Number(userCoordinates.latitude),
         Number(userCoordinates.longitude),
-        superAdminCoordinates.latitude,
-        superAdminCoordinates.longitude,
+        Number(storeCoordinates.latitude),
+        Number(storeCoordinates.longitude),
       );
     }
 
     return {
       user_coordinates: userCoordinates,
-      store_coordinates: superAdminCoordinates,
+      store_coordinates: storeCoordinates,
       distance: distanceKm !== null ? `${distanceKm} km` : null,
     };
   },

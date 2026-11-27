@@ -94,6 +94,15 @@ export const uploadCouponImage = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
 }).single("coupon_image");
 
+export const uploadStoreImages = multer({
+  storage: createStorage("stores"),
+  fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 },
+}).fields([
+  { name: "store_logo", maxCount: 1 },
+  { name: "store_banner", maxCount: 1 },
+]);
+
 const ensureDir = (dirPath) => {
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
